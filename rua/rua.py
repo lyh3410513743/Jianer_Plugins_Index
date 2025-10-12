@@ -7,7 +7,7 @@ import re
 from PIL import Image
 
 TRIGGHT_KEYWORD = "rua"
-HELP_MESSAGE = "/rua [QQ号/@用户] [背景颜色(可选)] —> 生成摸摸头GIF，默认背景为透明"
+HELP_MESSAGE = "rua [QQ号/@用户] [背景颜色(可选)] —> 生成摸摸头GIF，默认背景为透明"
 
 async def on_message(event, actions, Manager, Segments, order, reminder, bot_name):
     # 检查是否包含触发关键词
