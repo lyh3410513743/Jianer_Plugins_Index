@@ -1,9 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-B站投稿查询插件
-功能：查询B站UP主的投稿视频列表
-"""
-
 import aiohttp
 import asyncio
 import traceback
@@ -59,10 +53,10 @@ async def on_message(event, actions, Manager, Segments):
 格式：{prefix} [mid] [关键词] [页码]
 
 示例：
-{prefix} 1969160969 → 查询第1页
-{prefix} 1969160969 2 → 查询第2页（无关键词）
-{prefix} 1969160969 原神 → 搜索"原神"相关视频
-{prefix} 1969160969 原神 2 → 搜索"原神"相关视频，查看第2页"""
+{prefix} 401742377 → 查询第1页
+{prefix} 401742377 2 → 查询第2页（无关键词）
+{prefix} 401742377 原神 → 搜索"原神"相关视频
+{prefix} 401742377 原神 2 → 搜索"原神"相关视频，查看第2页"""
                 
             await actions.send(
                 group_id=event.group_id,
@@ -147,6 +141,7 @@ async def on_message(event, actions, Manager, Segments):
                             play_count = video.get("play_count", 0)
                             duration = video.get("duration", 0)
                             publish_time = video.get("publish_time", 0)
+                            cover_url = video.get("cover", "")
                             
                             if bvid.startswith("BV"):
                                 short_link = f"https://b23.tv/{bvid}"
@@ -170,9 +165,18 @@ async def on_message(event, actions, Manager, Segments):
                             if len(title_text) > 40:
                                 title_text = title_text[:37] + "..."
                             
+                            # 构建视频信息（包含封面图片）
                             video_info = f"{i}. {title_text}\n"
                             video_info += f"   📊 {play_text}播放 ⏱️{duration_text} 📅{pub_date}\n"
-                            video_info += f"   🔗 {short_link}\n"
+                            video_info += f"   🔗 {short_link}"
+                            
+                            # 如果有封面URL，添加封面图片
+                            if cover_url and cover_url.startswith("http"):
+                                try:
+                                    # 添加封面图片
+                                    reply_parts.append(Segments.Image(cover_url))
+                                except:
+                                    pass  # 如果图片发送失败，继续发送文本信息
                             
                             reply_parts.append(Segments.Text(video_info))
                         
@@ -194,10 +198,25 @@ async def on_message(event, actions, Manager, Segments):
                         
                         reply_parts.append(Segments.Text(footer))
                         
-                        await actions.send(
-                            group_id=event.group_id,
-                            message=Manager.Message(*reply_parts)
-                        )
+                        # 分批发送消息，避免一次性消息太长
+                        try:
+                            # 先发送前半部分（标题和视频信息）
+                            await actions.send(
+                                group_id=event.group_id,
+                                message=Manager.Message(*reply_parts[:len(reply_parts)-1])
+                            )
+                            
+                            # 再发送页脚信息（分页导航）
+                            await actions.send(
+                                group_id=event.group_id,
+                                message=Manager.Message(reply_parts[-1])
+                            )
+                        except:
+                            # 如果分批发送失败，尝试一次性发送
+                            await actions.send(
+                                group_id=event.group_id,
+                                message=Manager.Message(*reply_parts)
+                            )
                     else:
                         error_msg = f"❌ 未找到用户 {mid} 的投稿视频"
                         if keywords:
