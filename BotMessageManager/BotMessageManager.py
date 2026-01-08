@@ -2,22 +2,19 @@ import os
 import re
 import time
 import asyncio
-import traceback
 import threading
 from Hyper import Configurator
 
 Configurator.cm = Configurator.ConfigManager(Configurator.Config(file="config.json").load_from_file())
 
-# 直接从配置获取
 config = Configurator.cm.get_cfg()
 reminder = config.others["reminder"]
 bot_name = config.others["bot_name"]
 
-# 插件信息
 TRIGGHT_KEYWORD = "撤回"
 HELP_MESSAGE = f"{reminder}撤回 —> 撤回您触发{bot_name}发送的消息"
 
-MESSAGE_RETENTION_TIME = 60  # 插件消息在1分钟后自动撤回
+MESSAGE_RETENTION_TIME = 60
 
 def get_help_message():
     return HELP_MESSAGE
@@ -82,12 +79,43 @@ def is_message_too_old(message_data, max_minutes=2):
         
         current_time = int(time.time())
         time_diff = current_time - message_time
-        
         minutes_diff = time_diff / 60
-        
         return minutes_diff > max_minutes
-    except Exception as e:
+    except Exception:
         return False
+
+def extract_qq_from_message_content(message_content, robot_qq):
+    extracted_qqs = set()
+    
+    if isinstance(message_content, str):
+        qq_pattern = r'\b([1-9]\d{4,10})\b'
+        matches = re.findall(qq_pattern, message_content)
+        extracted_qqs.update(matches)
+        
+        cq_pattern = r'\[CQ:at,qq=(\d+)\]'
+        cq_matches = re.findall(cq_pattern, message_content)
+        extracted_qqs.update(cq_matches)
+    
+    elif isinstance(message_content, list):
+        for segment in message_content:
+            if isinstance(segment, dict):
+                if segment.get('type') == 'text':
+                    text = segment.get('data', {}).get('text', '')
+                    qq_pattern = r'\b([1-9]\d{4,10})\b'
+                    matches = re.findall(qq_pattern, text)
+                    extracted_qqs.update(matches)
+                elif segment.get('type') == 'at':
+                    qq = segment.get('data', {}).get('qq', '')
+                    if qq:
+                        extracted_qqs.add(str(qq))
+    
+    filtered_qqs = []
+    for qq in extracted_qqs:
+        qq_str = str(qq)
+        if qq_str and qq_str != robot_qq and qq_str != '0' and len(qq_str) >= 5:
+            filtered_qqs.append(qq_str)
+    
+    return filtered_qqs
 
 async def is_robot_reply_to_user(message_data, current_user_id, robot_qq, actions):
     replied_msg_id = get_replied_message_id(message_data)
@@ -109,56 +137,65 @@ async def is_robot_reply_to_user(message_data, current_user_id, robot_qq, action
         except:
             pass
     
+    try:
+        message_content = None
+        
+        if hasattr(message_data, 'message'):
+            message_content = message_data.message
+        elif hasattr(message_data, 'raw_message'):
+            message_content = message_data.raw_message
+        elif isinstance(message_data, dict):
+            message_content = message_data.get('message') or message_data.get('raw_message')
+        
+        if message_content:
+            extracted_qqs = extract_qq_from_message_content(message_content, robot_qq)
+            
+            if str(current_user_id) in extracted_qqs:
+                return True
+    except Exception:
+        pass
+    
     return False
 
 async def schedule_message_deletion(sent_msg, actions):
-    """通用消息删除函数，使用同步等待确保执行"""
     try:
         if sent_msg and hasattr(sent_msg, 'data') and hasattr(sent_msg.data, 'message_id'):
             message_id = sent_msg.data.message_id
             
-            # 使用同步sleep，避免异步任务被取消
             def delete_message_sync():
                 time.sleep(MESSAGE_RETENTION_TIME)
                 try:
-                    # 在主线程中执行异步操作
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     
                     async def delete():
                         try:
                             await actions.del_message(message_id)
-                        except Exception as e:
-                            pass  # 静默处理撤回失败
+                        except Exception:
+                            pass
                     
                     loop.run_until_complete(delete())
                     loop.close()
-                except Exception as e:
-                    pass  # 静默处理线程异常
+                except Exception:
+                    pass
             
-            # 启动新线程执行删除
             thread = threading.Thread(target=delete_message_sync, daemon=True)
             thread.start()
-        else:
-            pass  # 静默处理无法获取消息ID的情况
                     
-    except Exception as e:
-        pass  # 静默处理自动撤回过程异常
+    except Exception:
+        pass
 
 async def send_message_with_auto_delete(actions, group_id, message):
-    """发送消息并设置自动撤回"""
     try:
-        # 发送消息
         sent_msg = await actions.send(group_id=group_id, message=message)
         
         if sent_msg:
-            # 创建自动撤回任务
             asyncio.create_task(schedule_message_deletion(sent_msg, actions))
             return sent_msg
         else:
             return None
             
-    except Exception as e:
+    except Exception:
         return None
 
 async def on_message(event, actions, Manager, Segments):
@@ -175,7 +212,6 @@ async def on_message(event, actions, Manager, Segments):
         
         user_message = str(event.message)
         
-        # 检查消息是否以正确的格式开头
         if not user_message.startswith(f"{reminder}{TRIGGHT_KEYWORD}"):
             return None
         
@@ -270,7 +306,7 @@ async def on_message(event, actions, Manager, Segments):
             
             return True
             
-        except Exception as e:
+        except Exception:
             try:
                 await actions.del_message(target_message_id)
                 success_msg = f"✅ {bot_name}已撤回消息"
@@ -289,7 +325,7 @@ async def on_message(event, actions, Manager, Segments):
                 )
                 return True
         
-    except Exception as e:
+    except Exception:
         return True
 
 print(f"[撤回插件] ✅ 已加载")
