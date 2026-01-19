@@ -1,14 +1,19 @@
-# -*- coding: utf-8 -*-
-# plugins/DailyNewsImage.py
-
 import aiohttp
 import asyncio
 import tempfile
 import os
 from datetime import datetime
 
-TRIGGHT_KEYWORD = "日新闻图"
-HELP_MESSAGE = "-日新闻图 —> 获取今日新闻摘要图片 📰"
+from Hyper import Configurator
+Configurator.cm = Configurator.ConfigManager(Configurator.Config(file="config.json").load_from_file())
+
+
+reminder = Configurator.cm.get_cfg().others["reminder"]
+bot_name = Configurator.cm.get_cfg().others["bot_name"]
+
+
+TRIGGER_KEYWORD = f"日新闻图"
+HELP_MESSAGE = f"{reminder}日新闻图 —> 获取今日新闻摘要图片 📰"
 
 async def on_message(event, actions, Manager, Segments):
     try:
